@@ -9,6 +9,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_kb
+from bot.stickers import STICKER_FILE_ID_MAP, should_send_sticker, sticker_policy
 
 
 router = Router()
@@ -68,6 +69,9 @@ async def any_text(message: Message) -> None:
     if not question:
         return
 
+    if message.from_user:
+        sticker_policy.record_user_message(message.from_user.id)
+
     data = await _ask_api(question)
     if data is None:
         await message.answer(_fallback_contact_message(), reply_markup=main_menu_kb())
@@ -85,3 +89,12 @@ async def any_text(message: Message) -> None:
 
     await message.answer(answer, reply_markup=main_menu_kb())
 
+    # Optional: stickers are used rarely, and we don't have real sticker file_id values yet.
+    if message.from_user and sticker_policy.can_send_now(message.from_user.id):
+        decision = should_send_sticker(question)
+        if decision.send:
+            logger.info("sticker_decision=%s", decision.sticker_key)
+            # TODO: send_sticker(STICKER_FILE_ID_MAP[decision.sticker_key])
+            # Example:
+            # await message.answer_sticker(STICKER_FILE_ID_MAP[decision.sticker_key])
+            sticker_policy.mark_sent(message.from_user.id)
