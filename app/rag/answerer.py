@@ -70,14 +70,12 @@ class OpenAIAnswerer:
         client = OpenAI(api_key=self._api_key)
 
         sources: list[str] = []
-        seen: set[str] = set()
         facts_lines: list[str] = []
         for idx, ch in enumerate(context_chunks, start=1):
             meta = ch.get("metadata") or {}
             file_path = str(meta.get("file_path") or "")
             text = str(ch.get("text") or "")
-            if file_path and file_path not in seen:
-                seen.add(file_path)
+            if file_path and file_path not in sources:
                 sources.append(file_path)
             facts_lines.append(f"{idx}) [{file_path}] {text}")
 
@@ -131,7 +129,7 @@ class OpenAIAnswerer:
 
             answer = fallback
 
-        return {"answer": answer, "sources": sources[:5]}
+        return {"answer": answer, "sources": sources[:6]}
 
 
 class StubAnswerer:
