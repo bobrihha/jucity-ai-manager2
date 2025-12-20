@@ -35,11 +35,14 @@ class AskResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    try:
+        _store.client.get_collections()
+        return {"status": "ok"}
+    except Exception:
+        return {"status": "error"}
 
 
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest) -> AskResponse:
     result = _answerer.answer(payload.question)
     return AskResponse(answer=result.answer, sources=result.sources)
-
