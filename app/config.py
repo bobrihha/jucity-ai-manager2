@@ -13,6 +13,7 @@ class Settings:
     vector_backend: str
     chroma_dir: str
     openai_embedding_model: str
+    openai_chat_model: str
 
 
 def get_settings() -> Settings:
@@ -25,4 +26,5 @@ def get_settings() -> Settings:
         vector_backend=os.getenv("VECTOR_BACKEND", "chroma"),
         chroma_dir=os.getenv("CHROMA_DIR", "data/chroma_nn"),
         openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
     )

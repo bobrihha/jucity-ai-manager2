@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from app.config import get_settings
 from app.rag.answerer import Answerer
 from app.rag.embedder import StubEmbedder
-from app.rag.llm import StubLLM
+from app.rag.llm import OpenAILLM, StubLLM
 from app.rag.store_factory import get_store
 
 
@@ -15,7 +17,7 @@ app = FastAPI(title="JuCity AI Manager", version="0.1.0")
 _settings = get_settings()
 _embedder = StubEmbedder()
 _store = get_store(_settings, vector_size=_embedder.dim)
-_llm = StubLLM()
+_llm = OpenAILLM(model=_settings.openai_chat_model) if (os.getenv("OPENAI_API_KEY") or "") else StubLLM()
 _answerer = Answerer(store=_store, embedder=_embedder, llm=_llm, top_k=_settings.top_k)
 
 
