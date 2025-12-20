@@ -79,6 +79,45 @@ def _tokenize_for_overlap(text: str) -> set[str]:
     return out
 
 
+def _detect_intent(question: str) -> str:
+    q = question.lower()
+
+    if "1 января" in q or "31 декабря" in q or "до скольки" in q or "режим" in q or "работаете" in q:
+        return "hours"
+    if "скидк" in q or "льгот" in q or "овз" in q or "многодет" in q:
+        return "discounts"
+    if "vr" in q:
+        return "vr"
+    if "фиджитал" in q:
+        return "phygital"
+    if "торт" in q or "сладкий" in q:
+        return "own_food_rules"
+    if (
+        "сколько стоит" in q
+        or "цена" in q
+        or "билет" in q
+        or any(day in q for day in ["понедельник", "вторник", "сред", "четверг", "пятниц", "суббот", "воскрес"])
+    ):
+        return "prices"
+    return "general"
+
+
+def _allowed_files_for_intent(intent: str) -> set[str] | None:
+    if intent == "hours":
+        return {"kb/nn/core/hours.md", "kb/nn/core/contacts.md"}
+    if intent == "prices":
+        return {"kb/nn/tickets/prices.md", "kb/nn/tickets/free_entry.md"}
+    if intent == "discounts":
+        return {"kb/nn/tickets/discounts.md", "kb/nn/tickets/after_20.md"}
+    if intent == "vr":
+        return {"kb/nn/services/vr.md"}
+    if intent == "phygital":
+        return {"kb/nn/services/phygital.md"}
+    if intent == "own_food_rules":
+        return {"kb/nn/food/own_food_rules.md", "kb/nn/parties/birthday.md"}
+    return None
+
+
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest) -> AskResponse:
     if not _settings.openai_api_key:
@@ -106,9 +145,17 @@ def ask(payload: AskRequest) -> AskResponse:
         metadata = p.get("metadata")
         if not text or not metadata:
             continue
-        candidates.append({"score": score, "text": text, "metadata": metadata})
+        file_path = str((metadata or {}).get("file_path") or "")
+        candidates.append({"score": score, "text": text, "metadata": metadata, "file_path": file_path})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    intent = _detect_intent(payload.question)
+    allowed = _allowed_files_for_intent(intent)
+    if allowed is not None:
+        intent_candidates = [c for c in candidates if c.get("file_path") in allowed]
+        if intent_candidates:
+            candidates = intent_candidates
 
     similarity_threshold = 0.25
     filtered = [c for c in candidates if c["score"] >= similarity_threshold]
