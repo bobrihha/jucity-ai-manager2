@@ -15,6 +15,20 @@ python scripts/reindex_nn.py
 uvicorn app.main:app --reload
 ```
 
+## Запуск API
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+## Запуск Telegram-бота
+
+Важно: API должен быть запущен перед ботом.
+
+```bash
+python -m bot.main
+```
+
 ## Тесты (curl)
 
 ```bash
