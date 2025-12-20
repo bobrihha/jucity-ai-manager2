@@ -38,14 +38,12 @@ class OpenAIAnswerer:
         seen: set[str] = set()
         facts_lines: list[str] = []
         for idx, ch in enumerate(context_chunks, start=1):
-            file_path = str(ch.get("file_path") or "")
+            meta = ch.get("metadata") or {}
+            file_path = str(meta.get("file_path") or "")
             text = str(ch.get("text") or "")
             if file_path and file_path not in seen:
                 seen.add(file_path)
                 sources.append(file_path)
-                if len(sources) >= 6:
-                    # Still list facts in prompt, but cap returned sources.
-                    pass
             facts_lines.append(f"{idx}) [{file_path}] {text}")
 
         user_content = (
