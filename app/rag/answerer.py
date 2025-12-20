@@ -67,7 +67,7 @@ class OpenAIAnswerer:
             ],
         )
         answer = (resp.choices[0].message.content or "").strip()
-        return {"answer": answer, "sources": sources[:6]}
+        return {"answer": answer, "sources": sources[:5]}
 
 
 class StubAnswerer:
