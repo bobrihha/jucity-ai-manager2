@@ -34,7 +34,8 @@ def main() -> int:
     embedder = OpenAIEmbedder(settings)
 
     docs = load_kb_markdown(kb_root)
-    chunks: list[tuple[str, str | None, str]] = []
+    files_read = len(docs)
+    chunks: list[tuple[str, str | None, str, str]] = []
     # (file_path, heading, chunk_id, text) without storing whole Chunk class in this script.
 
     for doc in docs:
@@ -45,7 +46,17 @@ def main() -> int:
         print("OK: no chunks to index (kb/nn has no .md content).")
         return 0
 
-    first_vector = embedder.embed([chunks[0][3]])[0]
+    chunks_created = len(chunks)
+
+    try:
+        first_vector = embedder.embed([chunks[0][3]])[0]
+    except Exception as exc:
+        print("ERROR: failed to compute embeddings (check OPENAI_API_KEY).")
+        print(f"- files read: {files_read}")
+        print(f"- chunks created: {chunks_created}")
+        print(f"- details: {type(exc).__name__}: {exc}")
+        return 1
+
     vector_size = len(first_vector)
     collection_name = "kb_nn"
 
@@ -79,7 +90,16 @@ def main() -> int:
         batch_size=batch_size,
     ):
         texts = [b["text"] for b in batch]
-        vectors = embedder.embed(texts)
+        try:
+            vectors = embedder.embed(texts)
+        except Exception as exc:
+            print("ERROR: failed to compute embeddings during batching (check OPENAI_API_KEY).")
+            print(f"- files read: {files_read}")
+            print(f"- chunks created: {chunks_created}")
+            print(f"- embedding dim: {vector_size}")
+            print(f"- points indexed before error: {points_indexed}")
+            print(f"- details: {type(exc).__name__}: {exc}")
+            return 1
 
         points: list[dict] = []
         for b, vector in zip(batch, vectors, strict=True):
@@ -112,7 +132,24 @@ def main() -> int:
                 return 1
             raise
 
-    print(f"OK: indexed {points_indexed} chunks into collection '{collection_name}' using {settings.vector_backend}")
+    points_in_chroma: int | None = None
+    if settings.vector_backend == "chroma":
+        try:
+            from app.rag.chroma_store import ChromaStore
+
+            col = ChromaStore(persist_dir=settings.chroma_dir, collection=collection_name)._get_collection()  # noqa: SLF001
+            points_in_chroma = int(col.count())
+        except Exception:
+            points_in_chroma = None
+
+    print("OK: reindex complete")
+    print(f"- files read: {files_read}")
+    print(f"- chunks created: {chunks_created}")
+    print(f"- embedding dim: {vector_size}")
+    if points_in_chroma is not None:
+        print(f"- points in chroma: {points_in_chroma} (dir: {settings.chroma_dir})")
+    else:
+        print(f"- points indexed (upserted): {points_indexed}")
     return 0
 
 
