@@ -6,3 +6,20 @@
 docker compose up -d
 ```
 
+## Запуск без Docker (Chroma)
+
+```bash
+export VECTOR_BACKEND=chroma
+export OPENAI_API_KEY=...
+python scripts/reindex_nn.py
+uvicorn app.main:app --reload
+```
+
+## Тесты (curl)
+
+```bash
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Можно принести свой торт на день рождения?"}'
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Вы работаете 1 января?"}'
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Какая скидка для ОВЗ?"}'
+```
