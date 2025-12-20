@@ -1,0 +1,52 @@
+parks:
+  nn:
+    name: "Джунгли Сити — Нижний Новгород"
+    required_files:
+      - "kb/nn/_meta_source_priority.md"
+      - "kb/nn/core/contacts.md"
+      - "kb/nn/core/location.md"
+      - "kb/nn/core/hours.md"
+
+      - "kb/nn/tickets/prices.md"
+      - "kb/nn/tickets/discounts.md"
+      - "kb/nn/tickets/after_20.md"
+      - "kb/nn/tickets/free_entry.md"
+
+      - "kb/nn/food/restaurant_general.md"
+      - "kb/nn/food/kids_menu.md"
+      - "kb/nn/food/banquet_menu.md"
+      - "kb/nn/food/own_food_rules.md"
+
+      - "kb/nn/rules/visit_rules.md"
+      - "kb/nn/services/vr.md"
+      - "kb/nn/services/phygital.md"
+      - "kb/nn/services/face_painting.md"
+      - "kb/nn/services/photographers.md"
+
+      - "kb/nn/parties/birthday.md"
+      - "kb/nn/parties/graduation.md"
+      - "kb/nn/programs/animations.md"
+
+      - "kb/nn/services/gift_cards.md"
+      - "kb/nn/services/souvenirs.md"
+      - "kb/nn/services/app.md"
+
+      - "kb/nn/links/social.md"
+      - "kb/nn/links/catalogs.md"
+      - "kb/nn/glossary/terms.md"
+
+    content_rules:
+      must_have_headings:
+        - "## Суть"
+        - "## Факты"
+        - "## Важные нюансы"
+        - "## Как объяснять гостю"
+      min_chars_per_file: 200
+      forbid_phrases:
+        - "я как ИИ"
+        - "я бот"
+        - "я модель"
+        - "по данным"
+        - "не могу помочь"
+        - "я вас не понял"
+
