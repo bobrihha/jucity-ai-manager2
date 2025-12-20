@@ -9,9 +9,8 @@ from pydantic import BaseModel
 load_dotenv()
 
 from app.config import get_settings
-from app.rag.answerer import Answerer
+from app.rag.answerer import Answerer, OpenAIAnswerer, StubAnswerer
 from app.rag.embedder import OpenAIEmbedder
-from app.rag.llm import OpenAILLM, StubLLM
 from app.rag.store_factory import get_store
 
 
@@ -21,8 +20,8 @@ _settings = get_settings()
 _embedder = OpenAIEmbedder(_settings)
 _vector_size = len(_embedder.embed(["bootstrap"])[0])
 _store = get_store(_settings, vector_size=_vector_size)
-_llm = OpenAILLM(model=_settings.openai_chat_model) if (os.getenv("OPENAI_API_KEY") or "") else StubLLM()
-_answerer = Answerer(store=_store, embedder=_embedder, llm=_llm, top_k=_settings.top_k)
+_generator = OpenAIAnswerer(_settings) if _settings.openai_api_key else StubAnswerer()
+_answerer = Answerer(store=_store, embedder=_embedder, generator=_generator, top_k=_settings.top_k)
 
 
 class AskRequest(BaseModel):
