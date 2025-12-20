@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -66,6 +67,18 @@ def _fallback_answer_with_contacts(contacts_text: str) -> str:
     return f"{base}\n\nКонтакты:\n{contacts_text}"
 
 
+def _tokenize_for_overlap(text: str) -> set[str]:
+    cleaned = re.sub(r"[^\w\s]+", " ", text.lower(), flags=re.UNICODE)
+    tokens = [t for t in cleaned.split() if t]
+    out: set[str] = set()
+    for t in tokens:
+        out.add(t)
+        if t.isdigit():
+            stripped = t.lstrip("0") or "0"
+            out.add(stripped)
+    return out
+
+
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest) -> AskResponse:
     if not _settings.openai_api_key:
@@ -99,6 +112,13 @@ def ask(payload: AskRequest) -> AskResponse:
 
     similarity_threshold = 0.25
     filtered = [c for c in candidates if c["score"] >= similarity_threshold]
+
+    question_words = _tokenize_for_overlap(payload.question)
+    for c in filtered:
+        chunk_words = _tokenize_for_overlap(str(c.get("text") or ""))
+        common = question_words.intersection(chunk_words)
+        c["rerank_score"] = float(len(common)) + 0.1 * float(c.get("score") or 0.0)
+    filtered.sort(key=lambda x: float(x.get("rerank_score") or 0.0), reverse=True)
     filtered = filtered[:6]
 
     if len(filtered) < 2:
@@ -112,7 +132,7 @@ def ask(payload: AskRequest) -> AskResponse:
                 sources.append(fp)
         return AskResponse(answer=_fallback_answer_with_contacts(contacts_text), sources=sources)
 
-    context_chunks = [{"text": c["text"], "metadata": c["metadata"]} for c in filtered]
+    context_chunks = [{"text": c["text"], "metadata": c["metadata"]} for c in filtered[:6]]
 
     answerer = OpenAIAnswerer(_settings)
     result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
