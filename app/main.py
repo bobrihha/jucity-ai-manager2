@@ -30,18 +30,23 @@ class AskResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    try:
-        if _settings.vector_backend == "qdrant":
+    if _settings.vector_backend == "qdrant":
+        try:
             _store.client.get_collections()  # type: ignore[attr-defined]
-        else:
-            # Chroma: if we can open the persistent client and list collections, we're ok.
-            import chromadb  # type: ignore
+            return {"status": "ok", "backend": "qdrant"}
+        except Exception:
+            return {"status": "error", "backend": "qdrant"}
 
-            client = chromadb.PersistentClient(path=_settings.chroma_dir)
-            client.list_collections()
-        return {"status": "ok"}
-    except Exception:
-        return {"status": "error"}
+    if _settings.vector_backend == "chroma":
+        try:
+            from pathlib import Path
+
+            Path(_settings.chroma_dir).mkdir(parents=True, exist_ok=True)
+            return {"status": "ok", "backend": "chroma"}
+        except Exception as exc:
+            return {"status": "error", "backend": "chroma", "detail": f"{type(exc).__name__}: {exc}"}
+
+    return {"status": "error", "backend": _settings.vector_backend, "detail": "unknown VECTOR_BACKEND"}
 
 
 @app.post("/ask", response_model=AskResponse)
