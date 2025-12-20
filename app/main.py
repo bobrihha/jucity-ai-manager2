@@ -118,6 +118,29 @@ def _allowed_files_for_intent(intent: str) -> set[str] | None:
     return None
 
 
+def _router_fallback_files(intent: str) -> list[str]:
+    if intent == "hours":
+        return ["kb/nn/core/hours.md", "kb/nn/core/contacts.md"]
+    if intent == "prices":
+        return ["kb/nn/tickets/prices.md", "kb/nn/core/contacts.md"]
+    if intent == "discounts":
+        return ["kb/nn/tickets/discounts.md", "kb/nn/core/contacts.md"]
+    return ["kb/nn/core/contacts.md"]
+
+
+def _build_context_chunks_from_files(file_paths: list[str]) -> list[dict]:
+    chunks: list[dict] = []
+    for fp in file_paths:
+        p = Path(fp)
+        if not p.exists():
+            continue
+        text = p.read_text(encoding="utf-8").strip()
+        if not text:
+            continue
+        chunks.append({"text": text, "metadata": {"file_path": fp, "heading": None, "chunk_id": "router_fallback"}})
+    return chunks
+
+
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest) -> AskResponse:
     if not _settings.openai_api_key:
@@ -157,8 +180,22 @@ def ask(payload: AskRequest) -> AskResponse:
         if intent_candidates:
             candidates = intent_candidates
 
-    similarity_threshold = 0.25
-    filtered = [c for c in candidates if c["score"] >= similarity_threshold]
+    # Keep 2–6 chunks by a similarity threshold.
+    min_similarity = 0.25
+    filtered: list[dict] = []
+    if candidates:
+        score_levels = sorted({float(c.get("score") or 0.0) for c in candidates}, reverse=True)
+        chosen_threshold: float | None = None
+        for t in score_levels + [min_similarity]:
+            t = max(min_similarity, float(t))
+            cnt = sum(1 for c in candidates if float(c.get("score") or 0.0) >= t)
+            if 2 <= cnt <= 6:
+                chosen_threshold = t
+                break
+        if chosen_threshold is None:
+            # If too many even at min_similarity, just cap later.
+            chosen_threshold = min_similarity
+        filtered = [c for c in candidates if float(c.get("score") or 0.0) >= chosen_threshold]
 
     question_words = _tokenize_for_overlap(payload.question)
     for c in filtered:
@@ -169,15 +206,19 @@ def ask(payload: AskRequest) -> AskResponse:
     filtered = filtered[:6]
 
     if len(filtered) < 2:
-        contacts_text = _read_contacts()
-        best_chunk = candidates[0] if candidates else None
-
-        sources: list[str] = ["kb/nn/core/contacts.md"] if contacts_text else []
-        if best_chunk:
-            fp = str((best_chunk.get("metadata") or {}).get("file_path") or "")
-            if fp and fp not in sources:
-                sources.append(fp)
-        return AskResponse(answer=_fallback_answer_with_contacts(contacts_text), sources=sources)
+        # Router fallback: use a minimal, topic-focused context instead of random sources.
+        fallback_files = _router_fallback_files(intent) if intent in {"hours", "prices", "discounts"} else ["kb/nn/core/contacts.md"]
+        context_chunks = _build_context_chunks_from_files(fallback_files)
+        if not context_chunks and candidates:
+            # As a last resort, include the best retrieved chunk.
+            best = candidates[0]
+            context_chunks = [{"text": best["text"], "metadata": best["metadata"]}]
+        if not context_chunks:
+            contacts_text = _read_contacts()
+            return AskResponse(answer=_fallback_answer_with_contacts(contacts_text), sources=["kb/nn/core/contacts.md"] if contacts_text else [])
+        answerer = OpenAIAnswerer(_settings)
+        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
+        return AskResponse(answer=str(result.get("answer") or ""), sources=list(result.get("sources") or []))
 
     context_chunks = [{"text": c["text"], "metadata": c["metadata"]} for c in filtered[:6]]
 
