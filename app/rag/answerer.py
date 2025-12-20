@@ -105,6 +105,14 @@ class OpenAIAnswerer:
         if answer.startswith("nЕсли"):
             answer = "Если" + answer[len("nЕсли") :]
 
+        # If context contains a directly relevant link (e.g. VR prices), include it (max 1 link).
+        # This helps enforce the product rule even if the model answers "могу прислать".
+        if "http" not in answer.lower():
+            question_low = user_question.lower()
+            context_text = "\n\n".join(str(c.get("text") or "") for c in context_chunks)
+            if "vr" in question_low and "https://nn.jucity.ru/tickets-vr/" in context_text:
+                answer = f"{answer}\n\nhttps://nn.jucity.ru/tickets-vr/"
+
         if not answer or len(answer) < 10:
             first = context_chunks[0] if context_chunks else {}
             first_text = str(first.get("text") or "").strip()
