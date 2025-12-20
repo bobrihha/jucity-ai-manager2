@@ -10,7 +10,7 @@ load_dotenv()
 
 from app.config import get_settings
 from app.rag.answerer import Answerer
-from app.rag.embedder import StubEmbedder
+from app.rag.embedder import OpenAIEmbedder
 from app.rag.llm import OpenAILLM, StubLLM
 from app.rag.store_factory import get_store
 
@@ -18,8 +18,9 @@ from app.rag.store_factory import get_store
 app = FastAPI(title="JuCity AI Manager", version="0.1.0")
 
 _settings = get_settings()
-_embedder = StubEmbedder()
-_store = get_store(_settings, vector_size=_embedder.dim)
+_embedder = OpenAIEmbedder(_settings)
+_vector_size = len(_embedder.embed(["bootstrap"])[0])
+_store = get_store(_settings, vector_size=_vector_size)
 _llm = OpenAILLM(model=_settings.openai_chat_model) if (os.getenv("OPENAI_API_KEY") or "") else StubLLM()
 _answerer = Answerer(store=_store, embedder=_embedder, llm=_llm, top_k=_settings.top_k)
 

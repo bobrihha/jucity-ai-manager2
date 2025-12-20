@@ -1,66 +1,36 @@
 from __future__ import annotations
 
-import hashlib
 from abc import ABC, abstractmethod
-import os
+from typing import TYPE_CHECKING
 
 
 class Embedder(ABC):
-    @property
-    @abstractmethod
-    def dim(self) -> int: ...
-
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return self.embed(texts)
 
-
-class StubEmbedder(Embedder):
-    def __init__(self, dim: int = 8) -> None:
-        self._dim = dim
-
-    @property
-    def dim(self) -> int:
-        return self._dim
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for text in texts:
-            digest = hashlib.sha256(text.encode("utf-8")).digest()
-            vec = []
-            for i in range(self._dim):
-                b = digest[i]
-                vec.append((b / 255.0) * 2.0 - 1.0)
-            vectors.append(vec)
-        return vectors
-
-
 class OpenAIEmbedder(Embedder):
-    def __init__(self, *, model: str) -> None:
-        self.model = model
-        self._dim: int | None = None
+    def __init__(self, settings) -> None:
+        if TYPE_CHECKING:  # pragma: no cover
+            from app.config import Settings  # noqa: F401
 
-    @property
-    def dim(self) -> int:
-        if self._dim is None:
-            raise RuntimeError("Embedding dimension is unknown until the first embed() call.")
-        return self._dim
+        self.api_key = getattr(settings, "openai_api_key", None)
+        self.model = getattr(settings, "openai_embedding_model", "text-embedding-3-small")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set. Set it to use OpenAI embeddings.")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required")
 
         from openai import OpenAI  # type: ignore
 
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=self.api_key)
 
         normalized = [(t if t.strip() else " ") for t in texts]
         vectors: list[list[float]] = []
 
-        batch_size = 100
+        batch_size = 96
         for i in range(0, len(normalized), batch_size):
             batch = normalized[i : i + batch_size]
             resp = client.embeddings.create(model=self.model, input=batch)
@@ -70,10 +40,4 @@ class OpenAIEmbedder(Embedder):
                 vec = list(item.embedding)
                 vectors.append(vec)
 
-        if vectors and self._dim is None:
-            self._dim = len(vectors[0])
         return vectors
-
-    @classmethod
-    def from_settings(cls, settings) -> "OpenAIEmbedder":
-        return cls(model=settings.openai_embedding_model)

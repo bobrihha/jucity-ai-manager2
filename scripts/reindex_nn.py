@@ -14,7 +14,7 @@ load_dotenv()
 
 from app.config import get_settings
 from app.rag.chunker import chunk_markdown
-from app.rag.embedder import StubEmbedder
+from app.rag.embedder import OpenAIEmbedder
 from app.rag.kb_loader import load_kb_markdown
 from app.rag.store_factory import get_store
 
@@ -31,7 +31,7 @@ def main() -> int:
     settings = get_settings()
     kb_root = Path("kb/nn")
 
-    embedder = StubEmbedder()
+    embedder = OpenAIEmbedder(settings)
 
     docs = load_kb_markdown(kb_root)
     chunks: list[tuple[str, str | None, str]] = []
@@ -45,7 +45,7 @@ def main() -> int:
         print("OK: no chunks to index (kb/nn has no .md content).")
         return 0
 
-    first_vector = embedder.embed_texts([chunks[0][3]])[0]
+    first_vector = embedder.embed([chunks[0][3]])[0]
     vector_size = len(first_vector)
     collection_name = "kb_nn"
 
@@ -79,7 +79,7 @@ def main() -> int:
         batch_size=batch_size,
     ):
         texts = [b["text"] for b in batch]
-        vectors = embedder.embed_texts(texts)
+        vectors = embedder.embed(texts)
 
         points: list[dict] = []
         for b, vector in zip(batch, vectors, strict=True):
