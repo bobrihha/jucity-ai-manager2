@@ -66,7 +66,36 @@ class OpenAIAnswerer:
                 {"role": "user", "content": user_content},
             ],
         )
-        answer = (resp.choices[0].message.content or "").strip()
+        answer = (resp.choices[0].message.content or "")
+        answer = answer.strip()
+        answer = answer.replace("\n\n\n", "\n\n")
+        if answer.startswith("nЕсли"):
+            answer = "Если" + answer[len("nЕсли") :]
+
+        if not answer or len(answer) < 10:
+            first = context_chunks[0] if context_chunks else {}
+            first_text = str(first.get("text") or "").strip()
+            first_text = first_text.replace("\n\n\n", "\n\n")
+            excerpt = first_text[:320].strip()
+            if excerpt and len(first_text) > 320:
+                excerpt = excerpt + "…"
+
+            contacts_text = ""
+            try:
+                p = Path("kb/nn/core/contacts.md")
+                if p.exists():
+                    contacts_text = p.read_text(encoding="utf-8").strip()
+            except Exception:
+                contacts_text = ""
+
+            fallback = "Лучше уточнить у администратора/отдела праздников."
+            if excerpt:
+                fallback = f"{excerpt}\n\n{fallback}"
+            if contacts_text:
+                fallback = f"{fallback}\n\nКонтакты:\n{contacts_text}"
+
+            answer = fallback
+
         return {"answer": answer, "sources": sources[:5]}
 
 
