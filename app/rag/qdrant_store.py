@@ -31,7 +31,9 @@ class QdrantStore:
             vectors_config=qm.VectorParams(size=self.vector_size, distance=qm.Distance.COSINE),
         )
 
-    def recreate_collection(self) -> None:
+    def recreate_collection(self, collection_name: str, vector_size: int) -> None:
+        self.collection = collection_name
+        self.vector_size = int(vector_size)
         self.client.recreate_collection(
             collection_name=self.collection,
             vectors_config=qm.VectorParams(size=self.vector_size, distance=qm.Distance.COSINE),
@@ -41,25 +43,38 @@ class QdrantStore:
         self.ensure_collection()
         self.client.upsert(collection_name=self.collection, points=points)
 
-    def search(self, *, query_vector: list[float], limit: int = 5) -> list[SearchHit]:
+    def search(self, query_vector: list[float], top_k: int) -> list[dict]:
         self.ensure_collection()
         results = self.client.search(
             collection_name=self.collection,
             query_vector=query_vector,
-            limit=limit,
+            limit=int(top_k),
             with_payload=True,
         )
-        hits: list[SearchHit] = []
+        out: list[dict] = []
         for r in results:
             payload = r.payload or {}
-            hits.append(
-                SearchHit(
-                    file_path=str(payload.get("file_path", "")),
-                    heading=payload.get("heading"),
-                    chunk_id=str(payload.get("chunk_id", "")),
-                    text=str(payload.get("text", "")),
-                    score=float(r.score or 0.0),
-                )
-            )
-        return hits
 
+            # Support both payload layouts:
+            # 1) {"text": "...", "metadata": {...}}
+            # 2) {"text": "...", "file_path": "...", "heading": "...", "chunk_id": "..."}
+            metadata = payload.get("metadata") or {}
+            file_path = metadata.get("file_path") or payload.get("file_path") or ""
+            heading = metadata.get("heading") if metadata else payload.get("heading")
+            chunk_id = metadata.get("chunk_id") or payload.get("chunk_id") or ""
+            text = payload.get("text") or ""
+
+            out.append(
+                {
+                    "score": float(r.score or 0.0),
+                    "payload": {
+                        "text": str(text),
+                        "metadata": {
+                            "file_path": str(file_path),
+                            "heading": heading,
+                            "chunk_id": str(chunk_id),
+                        },
+                    },
+                }
+            )
+        return out
