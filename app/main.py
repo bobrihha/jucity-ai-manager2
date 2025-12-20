@@ -125,6 +125,12 @@ def _router_fallback_files(intent: str) -> list[str]:
         return ["kb/nn/tickets/prices.md", "kb/nn/core/contacts.md"]
     if intent == "discounts":
         return ["kb/nn/tickets/discounts.md", "kb/nn/core/contacts.md"]
+    if intent == "vr":
+        return ["kb/nn/services/vr.md", "kb/nn/core/contacts.md"]
+    if intent == "phygital":
+        return ["kb/nn/services/phygital.md", "kb/nn/core/contacts.md"]
+    if intent == "own_food_rules":
+        return ["kb/nn/food/own_food_rules.md", "kb/nn/parties/birthday.md", "kb/nn/core/contacts.md"]
     return ["kb/nn/core/contacts.md"]
 
 
@@ -139,6 +145,22 @@ def _build_context_chunks_from_files(file_paths: list[str]) -> list[dict]:
             continue
         chunks.append({"text": text, "metadata": {"file_path": fp, "heading": None, "chunk_id": "router_fallback"}})
     return chunks
+
+
+def _primary_file_for_intent(intent: str) -> str | None:
+    if intent == "hours":
+        return "kb/nn/core/hours.md"
+    if intent == "prices":
+        return "kb/nn/tickets/prices.md"
+    if intent == "discounts":
+        return "kb/nn/tickets/discounts.md"
+    if intent == "vr":
+        return "kb/nn/services/vr.md"
+    if intent == "phygital":
+        return "kb/nn/services/phygital.md"
+    if intent == "own_food_rules":
+        return "kb/nn/food/own_food_rules.md"
+    return None
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -198,16 +220,18 @@ def ask(payload: AskRequest) -> AskResponse:
         filtered = [c for c in candidates if float(c.get("score") or 0.0) >= chosen_threshold]
 
     question_words = _tokenize_for_overlap(payload.question)
+    primary_file = _primary_file_for_intent(intent)
     for c in filtered:
         chunk_words = _tokenize_for_overlap(str(c.get("text") or ""))
         common = question_words.intersection(chunk_words)
-        c["rerank_score"] = float(len(common)) + 0.1 * float(c.get("score") or 0.0)
+        bonus = 1.0 if (primary_file and c.get("file_path") == primary_file) else 0.0
+        c["rerank_score"] = float(len(common)) + 0.1 * float(c.get("score") or 0.0) + bonus
     filtered.sort(key=lambda x: float(x.get("rerank_score") or 0.0), reverse=True)
     filtered = filtered[:6]
 
     if len(filtered) < 2:
         # Router fallback: use a minimal, topic-focused context instead of random sources.
-        fallback_files = _router_fallback_files(intent) if intent in {"hours", "prices", "discounts"} else ["kb/nn/core/contacts.md"]
+        fallback_files = _router_fallback_files(intent) if intent != "general" else ["kb/nn/core/contacts.md"]
         context_chunks = _build_context_chunks_from_files(fallback_files)
         if not context_chunks and candidates:
             # As a last resort, include the best retrieved chunk.
