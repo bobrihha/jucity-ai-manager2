@@ -10,6 +10,8 @@ class Settings:
     qdrant_api_key: str | None
     qdrant_collection: str
     top_k: int
+    vector_backend: str
+    chroma_dir: str
 
 
 def get_settings() -> Settings:
@@ -19,4 +21,6 @@ def get_settings() -> Settings:
         qdrant_api_key=os.getenv("QDRANT_API_KEY") or None,
         qdrant_collection=os.getenv("QDRANT_COLLECTION", "kb_nn"),
         top_k=int(os.getenv("TOP_K", "5")),
+        vector_backend=os.getenv("VECTOR_BACKEND", "chroma"),
+        chroma_dir=os.getenv("CHROMA_DIR", "data/chroma_nn"),
     )
