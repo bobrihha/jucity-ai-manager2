@@ -19,40 +19,96 @@ def _point_id(chunk_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
 
 
+def _batched(items: list[dict], batch_size: int) -> list[list[dict]]:
+    return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
+
+
 def main() -> int:
     settings = get_settings()
     kb_root = Path("kb/nn")
 
     embedder = StubEmbedder()
-    store = get_store(settings, vector_size=embedder.dim)
-    store.recreate_collection(settings.qdrant_collection, embedder.dim)
 
     docs = load_kb_markdown(kb_root)
-    all_points: list[dict] = []
+    chunks: list[tuple[str, str | None, str]] = []
+    # (file_path, heading, chunk_id, text) without storing whole Chunk class in this script.
 
     for doc in docs:
-        chunks = chunk_markdown(file_path=doc.file_path, markdown=doc.text)
-        vectors = embedder.embed_texts([c.text for c in chunks]) if chunks else []
-        for chunk, vector in zip(chunks, vectors, strict=True):
-            all_points.append(
+        for c in chunk_markdown(file_path=doc.file_path, markdown=doc.text):
+            chunks.append((c.file_path, c.heading, c.chunk_id, c.text))
+
+    if not chunks:
+        print("OK: no chunks to index (kb/nn has no .md content).")
+        return 0
+
+    first_vector = embedder.embed_texts([chunks[0][3]])[0]
+    vector_size = len(first_vector)
+    collection_name = "kb_nn"
+
+    store = get_store(settings, vector_size=vector_size)
+
+    try:
+        store.recreate_collection(collection_name, vector_size)
+    except Exception as exc:
+        if settings.vector_backend == "qdrant":
+            print(
+                "ERROR: Qdrant is not reachable. "
+                "Start Qdrant (docker compose up -d) or set QDRANT_URL to a reachable host.\n"
+                f"QDRANT_URL={settings.qdrant_url}\n"
+                f"Details: {type(exc).__name__}: {exc}"
+            )
+            return 1
+        raise
+
+    batch_size = 64
+    points_indexed = 0
+    for batch in _batched(
+        [
+            {
+                "file_path": file_path,
+                "heading": heading,
+                "chunk_id": chunk_id,
+                "text": text,
+            }
+            for file_path, heading, chunk_id, text in chunks
+        ],
+        batch_size=batch_size,
+    ):
+        texts = [b["text"] for b in batch]
+        vectors = embedder.embed_texts(texts)
+
+        points: list[dict] = []
+        for b, vector in zip(batch, vectors, strict=True):
+            points.append(
                 {
-                    "id": _point_id(chunk.chunk_id),
+                    "id": _point_id(str(b["chunk_id"])),
                     "vector": vector,
                     "payload": {
-                        "text": chunk.text,
+                        "text": str(b["text"]),
                         "metadata": {
-                            "file_path": chunk.file_path,
-                            "heading": chunk.heading,
-                            "chunk_id": chunk.chunk_id,
+                            "file_path": str(b["file_path"]),
+                            "heading": b["heading"],
+                            "chunk_id": str(b["chunk_id"]),
                         },
                     },
                 }
             )
 
-    if all_points:
-        store.upsert(points=all_points)
+        try:
+            store.upsert(points)
+            points_indexed += len(points)
+        except Exception as exc:
+            if settings.vector_backend == "qdrant":
+                print(
+                    "ERROR: failed to upsert into Qdrant. "
+                    "Check Qdrant is running and reachable.\n"
+                    f"QDRANT_URL={settings.qdrant_url}\n"
+                    f"Details: {type(exc).__name__}: {exc}"
+                )
+                return 1
+            raise
 
-    print(f"OK: indexed {len(all_points)} chunks into collection '{settings.qdrant_collection}'")
+    print(f"OK: indexed {points_indexed} chunks into collection '{collection_name}' using {settings.vector_backend}")
     return 0
 
 
