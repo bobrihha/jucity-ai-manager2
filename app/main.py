@@ -164,7 +164,7 @@ def _primary_file_for_intent(intent: str) -> str | None:
 
 
 @app.post("/ask", response_model=AskResponse)
-def ask(payload: AskRequest) -> AskResponse:
+def ask(payload: AskRequest) -> dict:
     if not _settings.openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is required for /ask")
 
@@ -175,7 +175,7 @@ def ask(payload: AskRequest) -> AskResponse:
             raise HTTPException(status_code=500, detail=f"Direct context for intent='{intent}' is empty")
         answerer = OpenAIAnswerer(_settings)
         result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
-        return AskResponse(answer=str(result.get("answer") or ""), sources=list(result.get("sources") or []))
+        return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}
 
     embedder = OpenAIEmbedder(_settings)
     query_vec = embedder.embed([payload.question])[0]
@@ -241,13 +241,16 @@ def ask(payload: AskRequest) -> AskResponse:
             context_chunks = [{"text": best["text"], "metadata": best["metadata"]}]
         if not context_chunks:
             contacts_text = _read_contacts()
-            return AskResponse(answer=_fallback_answer_with_contacts(contacts_text), sources=["kb/nn/core/contacts.md"] if contacts_text else [])
+            return {
+                "answer": _fallback_answer_with_contacts(contacts_text),
+                "sources": ["kb/nn/core/contacts.md"] if contacts_text else [],
+            }
         answerer = OpenAIAnswerer(_settings)
         result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
-        return AskResponse(answer=str(result.get("answer") or ""), sources=list(result.get("sources") or []))
+        return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}
 
     context_chunks = [{"text": c["text"], "metadata": c["metadata"]} for c in filtered[:6]]
 
     answerer = OpenAIAnswerer(_settings)
     result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
-    return AskResponse(answer=str(result.get("answer") or ""), sources=list(result.get("sources") or []))
+    return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}
