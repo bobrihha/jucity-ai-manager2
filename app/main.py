@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+load_dotenv()
 
 from app.config import get_settings
 from app.rag.answerer import Answerer
