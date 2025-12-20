@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 from typing import Protocol
 
 from app.config import Settings
@@ -18,6 +19,40 @@ class AnswerResult:
 
 class AnswerGenerator(Protocol):
     def generate(self, system_prompt: str, context_chunks: list[dict], user_question: str) -> dict: ...
+
+_DIRECT_INTENT_FILES: dict[str, list[str]] = {
+    "hours": ["kb/nn/core/hours.md", "kb/nn/core/contacts.md"],
+    "prices": ["kb/nn/tickets/prices.md", "kb/nn/tickets/free_entry.md", "kb/nn/core/contacts.md"],
+    "discounts": ["kb/nn/tickets/discounts.md", "kb/nn/tickets/after_20.md", "kb/nn/core/contacts.md"],
+    "vr": ["kb/nn/services/vr.md", "kb/nn/core/contacts.md"],
+    "phygital": ["kb/nn/services/phygital.md", "kb/nn/core/contacts.md"],
+    "own_food_rules": ["kb/nn/food/own_food_rules.md", "kb/nn/parties/birthday.md", "kb/nn/core/contacts.md"],
+}
+
+
+def build_direct_context(intent: str) -> list[dict]:
+    files = _DIRECT_INTENT_FILES.get(intent, [])
+    chunks: list[dict] = []
+
+    for idx, file_path in enumerate(files):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+        except FileNotFoundError:
+            logging.warning("build_direct_context: file not found: %s", file_path)
+            continue
+        except Exception as exc:
+            logging.warning("build_direct_context: failed to read %s (%s: %s)", file_path, type(exc).__name__, exc)
+            continue
+
+        chunks.append(
+            {
+                "text": text,
+                "metadata": {"file_path": file_path, "heading": "FULLFILE", "chunk_id": f"direct-{idx}"},
+            }
+        )
+
+    return chunks
 
 
 class OpenAIAnswerer:
