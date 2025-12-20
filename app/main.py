@@ -11,7 +11,7 @@ from pydantic import BaseModel
 load_dotenv()
 
 from app.config import get_settings
-from app.rag.answerer import OpenAIAnswerer
+from app.rag.answerer import OpenAIAnswerer, build_direct_context
 from app.rag.embedder import OpenAIEmbedder
 from app.rag.store_factory import get_store
 from app.rag.prompts import SYSTEM_PROMPT_JUICY_V1
@@ -168,6 +168,15 @@ def ask(payload: AskRequest) -> AskResponse:
     if not _settings.openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is required for /ask")
 
+    intent = _detect_intent(payload.question)
+    if intent != "general":
+        context_chunks = build_direct_context(intent)
+        if not context_chunks:
+            raise HTTPException(status_code=500, detail=f"Direct context for intent='{intent}' is empty")
+        answerer = OpenAIAnswerer(_settings)
+        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
+        return AskResponse(answer=str(result.get("answer") or ""), sources=list(result.get("sources") or []))
+
     embedder = OpenAIEmbedder(_settings)
     query_vec = embedder.embed([payload.question])[0]
 
@@ -194,13 +203,6 @@ def ask(payload: AskRequest) -> AskResponse:
         candidates.append({"score": score, "text": text, "metadata": metadata, "file_path": file_path})
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
-
-    intent = _detect_intent(payload.question)
-    allowed = _allowed_files_for_intent(intent)
-    if allowed is not None:
-        intent_candidates = [c for c in candidates if c.get("file_path") in allowed]
-        if intent_candidates:
-            candidates = intent_candidates
 
     # Keep 2–6 chunks by a similarity threshold.
     min_similarity = 0.25
