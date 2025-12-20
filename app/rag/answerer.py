@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import logging
+import re
 from typing import Protocol
 
 from app.config import Settings
@@ -104,6 +105,12 @@ class OpenAIAnswerer:
         answer = answer.replace("\n\n\n", "\n\n")
         if answer.startswith("nЕсли"):
             answer = "Если" + answer[len("nЕсли") :]
+
+        def _format_phone(m: re.Match[str]) -> str:
+            digits = m.group(1)
+            return f"+7 {digits[0:3]} {digits[3:6]}-{digits[6:8]}-{digits[8:10]}"
+
+        answer = re.sub(r"\+7(\d{10})\b", _format_phone, answer)
 
         # If context contains a directly relevant link (e.g. VR prices), include it (max 1 link).
         # This helps enforce the product rule even if the model answers "могу прислать".
