@@ -37,3 +37,23 @@ curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{
 curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Вы работаете 1 января?"}'
 curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Какая скидка для ОВЗ?"}'
 ```
+
+
+## Запуск в 2 терминалах
+
+Терминал 1:
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Терминал 2:
+```bash
+python -m bot.main
+```
+
+Тест:
+- открыть бота в Telegram
+- /start
+- нажать "VR"
+- написать "Можно торт на день рождения?"
+
