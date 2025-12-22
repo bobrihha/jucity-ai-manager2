@@ -26,7 +26,7 @@ uvicorn app.main:app --reload --port 8000
 Важно: API должен быть запущен перед ботом.
 
 ```bash
-python -m bot.main
+python3 -m bot.main
 ```
 
 ## Тесты (curl)
@@ -48,7 +48,7 @@ uvicorn app.main:app --reload --port 8000
 
 Терминал 2:
 ```bash
-python -m bot.main
+python3 -m bot.main
 ```
 
 Тест:
