@@ -6,10 +6,10 @@ import time
 import httpx
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot.config import get_settings
-from bot.keyboards import back_to_menu_kb, menu_kb
+from bot.keyboards import menu_button_kb, menu_inline_kb
 from bot.stickers import should_send_sticker, sticker_id_map
 
 
@@ -110,10 +110,10 @@ async def _maybe_send_sticker(message: Message, text: str) -> None:
         pass
 
 
-async def _reply_with_answer(message: Message, question: str, *, keyboard) -> None:
+async def _reply_with_answer(message: Message, question: str) -> None:
     data = await _ask_api(question)
     if data is None:
-        await message.answer(FALLBACK_ERROR, reply_markup=menu_kb())
+        await message.answer(FALLBACK_ERROR, reply_markup=menu_button_kb())
         return
 
     answer = str(data.get("answer") or "").strip()
@@ -125,18 +125,18 @@ async def _reply_with_answer(message: Message, question: str, *, keyboard) -> No
         logger.info("user_id=unknown question=%r sources=%s", question, sources)
 
     if not answer:
-        await message.answer(FALLBACK_ERROR, reply_markup=menu_kb())
+        await message.answer(FALLBACK_ERROR, reply_markup=menu_button_kb())
         return
 
-    await message.answer(answer, reply_markup=keyboard)
+    await message.answer(answer, reply_markup=menu_button_kb())
 
 
 async def _handle_topic(message: Message, topic: str) -> None:
     question = TOPIC_QUESTIONS.get(topic)
     if not question:
-        await message.answer("Не нашёл эту тему. Выберите из меню.", reply_markup=menu_kb())
+        await message.answer("Не нашёл эту тему. Выберите из меню.", reply_markup=menu_inline_kb())
         return
-    await _reply_with_answer(message, question, keyboard=back_to_menu_kb())
+    await _reply_with_answer(message, question)
     await _maybe_send_sticker(message, question)
 
 
@@ -146,8 +146,9 @@ async def start(message: Message) -> None:
         "Привет! Я Джуси из Джунгли Сити (Нижний Новгород).\n"
         "Спроси меня про билеты, скидки, режим работы, праздники или правила — подскажу."
     )
-    await message.answer(text, reply_markup=menu_kb())
+    await message.answer(text, reply_markup=menu_inline_kb())
     await message.answer("Парк выбран: НН.")
+    await message.answer("", reply_markup=ReplyKeyboardRemove())
 
     ok = await _health_check()
     if ok:
@@ -158,7 +159,7 @@ async def start(message: Message) -> None:
 
 @router.message(Command("menu"))
 async def menu(message: Message) -> None:
-    await message.answer("Меню тем:", reply_markup=menu_kb())
+    await message.answer("Выберите тему 👇", reply_markup=menu_inline_kb())
     ok = await _health_check()
     if ok:
         await message.answer("Я на связи!")
@@ -172,7 +173,7 @@ async def help_cmd(message: Message) -> None:
         "Я подсказываю по парку: билеты, скидки, режим работы, правила, праздники и контакты.\n"
         "Можно написать вопрос или выбрать тему в меню ниже."
     )
-    await message.answer(text, reply_markup=menu_kb())
+    await message.answer(text, reply_markup=menu_inline_kb())
 
 
 @router.message(Command("prices"))
@@ -194,7 +195,7 @@ async def hours_cmd(message: Message) -> None:
 async def menu_callback(callback: CallbackQuery) -> None:
     await callback.answer()
     if callback.message:
-        await callback.message.answer("Меню тем:", reply_markup=menu_kb())
+        await callback.message.answer("Выберите тему 👇", reply_markup=menu_inline_kb())
 
 
 @router.callback_query(F.data.startswith("topic:"))
@@ -218,7 +219,7 @@ async def any_text(message: Message) -> None:
     if not question:
         return
 
-    await _reply_with_answer(message, question, keyboard=menu_kb())
+    await _reply_with_answer(message, question)
 
     if message.from_user and _should_send_booking_hint(question, message.from_user.id):
         await message.answer("Если хотите, могу сразу дать контакт отдела праздников для брони: +7 962 509-74-93")

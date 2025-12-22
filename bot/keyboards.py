@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def menu_kb() -> InlineKeyboardMarkup:
+def menu_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -28,7 +28,7 @@ def menu_kb() -> InlineKeyboardMarkup:
     )
 
 
-def back_to_menu_kb() -> InlineKeyboardMarkup:
+def menu_button_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="menu")]]
+        inline_keyboard=[[InlineKeyboardButton(text="📋 Меню", callback_data="menu")]]
     )
