@@ -7,3 +7,4 @@ openai>=1.0.0
 python-dotenv>=1.0
 aiogram>=3.4,<4.0
 httpx>=0.25
+aiosqlite

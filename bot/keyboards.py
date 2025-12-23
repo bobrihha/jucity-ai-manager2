@@ -23,7 +23,7 @@ def menu_inline_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🕶️ VR", callback_data="topic:vr"),
                 InlineKeyboardButton(text="🎮 Фиджитал", callback_data="topic:phygital"),
             ],
-            [InlineKeyboardButton(text="📞 Контакты", callback_data="topic:contacts")],
+[InlineKeyboardButton(text="📞 Контакты", callback_data="topic:contacts")],
         ]
     )
 

@@ -7,10 +7,11 @@ import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Any
 
 load_dotenv()
 
-from app.config import get_settings
+from app.config import BUILD_ID, get_settings
 from app.rag.answerer import OpenAIAnswerer, build_direct_context
 from app.rag.embedder import OpenAIEmbedder
 from app.rag.store_factory import get_store
@@ -24,6 +25,8 @@ _settings = get_settings()
 
 class AskRequest(BaseModel):
     question: str
+    history: list[str] | None = None
+    profile: dict[str, Any] | None = None
 
 
 class AskResponse(BaseModel):
@@ -37,20 +40,20 @@ def health() -> dict[str, str]:
         try:
             store = get_store(_settings, vector_size=1)
             store.client.get_collections()  # type: ignore[attr-defined]
-            return {"status": "ok", "backend": "qdrant"}
+            return {"status": "ok", "backend": "qdrant", "build_id": BUILD_ID}
         except Exception:
-            return {"status": "error", "backend": "qdrant"}
+            return {"status": "error", "backend": "qdrant", "build_id": BUILD_ID}
 
     if _settings.vector_backend == "chroma":
         try:
             from pathlib import Path
 
             Path(_settings.chroma_dir).mkdir(parents=True, exist_ok=True)
-            return {"status": "ok", "backend": "chroma"}
+            return {"status": "ok", "backend": "chroma", "build_id": BUILD_ID}
         except Exception as exc:
-            return {"status": "error", "backend": "chroma", "detail": f"{type(exc).__name__}: {exc}"}
+            return {"status": "error", "backend": "chroma", "detail": f"{type(exc).__name__}: {exc}", "build_id": BUILD_ID}
 
-    return {"status": "error", "backend": _settings.vector_backend, "detail": "unknown VECTOR_BACKEND"}
+    return {"status": "error", "backend": _settings.vector_backend, "detail": "unknown VECTOR_BACKEND", "build_id": BUILD_ID}
 
 
 def _read_contacts() -> str:
@@ -82,6 +85,69 @@ def _tokenize_for_overlap(text: str) -> set[str]:
 def _detect_intent(question: str) -> str:
     q = question.lower()
 
+    if (
+        "размер" in q
+        or "площад" in q
+        or "кв" in q
+        or "м²" in q
+        or "метр" in q
+        or "сколько аттракцион" in q
+        or "40" in q
+        or "большой парк" in q
+        or "маленький парк" in q
+    ):
+        return "park_facts"
+    if (
+        "носки" in q
+        or "носок" in q
+        or "в носках" in q
+        or "купить носки" in q
+        or "без носков" in q
+        or "сменка" in q
+        or "сменная обувь" in q
+    ):
+        return "socks"
+    if (
+        "аттракционы" in q
+        or "что есть" in q
+        or "какие есть" in q
+        or "батут" in q
+        or "горки" in q
+        or "карусели" in q
+        or "лабиринт" in q
+        or "развлечения" in q
+    ):
+        return "attractions"
+    if (
+        "контакт" in q
+        or "телефон" in q
+        or "позвон" in q
+        or "звон" in q
+        or "email" in q
+        or "почт" in q
+    ):
+        return "contacts"
+    if (
+        "адрес" in q
+        or "как добраться" in q
+        or "где находится" in q
+        or "локаци" in q
+    ):
+        return "location"
+    if "правил" in q or "запрещен" in q:
+        return "rules"
+    if "выпускн" in q:
+        return "graduation"
+    if (
+        "день рождения" in q
+        or re.search(r"\bдр\b", q)
+        or "праздник" in q
+        or "банкет" in q
+        or "комната" in q
+        or "анимация" in q
+    ):
+        return "birthday"
+
     if "1 января" in q or "31 декабря" in q or "до скольки" in q or "режим" in q or "работаете" in q:
         return "hours"
     if "скидк" in q or "льгот" in q or "овз" in q or "многодет" in q:
@@ -92,6 +158,14 @@ def _detect_intent(question: str) -> str:
         return "phygital"
     if "торт" in q or "сладкий" in q:
         return "own_food_rules"
+    if (
+        "купить билет онлайн" in q
+        or "на сайте купить билет" in q
+        or "оплатить на сайте" in q
+        or "онлайн билет" in q
+        or "прям на сайте" in q
+    ):
+        return "tickets_online"
     if (
         "сколько стоит" in q
         or "цена" in q
@@ -174,7 +248,7 @@ def ask(payload: AskRequest) -> dict:
         if not context_chunks:
             raise HTTPException(status_code=500, detail=f"Direct context for intent='{intent}' is empty")
         answerer = OpenAIAnswerer(_settings)
-        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
+        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question, profile=payload.profile, history=payload.history)
         return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}
 
     embedder = OpenAIEmbedder(_settings)
@@ -246,11 +320,11 @@ def ask(payload: AskRequest) -> dict:
                 "sources": ["kb/nn/core/contacts.md"] if contacts_text else [],
             }
         answerer = OpenAIAnswerer(_settings)
-        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
+        result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question, profile=payload.profile, history=payload.history)
         return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}
 
     context_chunks = [{"text": c["text"], "metadata": c["metadata"]} for c in filtered[:6]]
 
     answerer = OpenAIAnswerer(_settings)
-    result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question)
+    result = answerer.generate(SYSTEM_PROMPT_JUICY_V1, context_chunks, payload.question, profile=payload.profile, history=payload.history)
     return {"answer": str(result.get("answer") or ""), "sources": list(result.get("sources") or [])}

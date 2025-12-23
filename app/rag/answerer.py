@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import logging
 import re
@@ -19,7 +20,14 @@ class AnswerResult:
 
 
 class AnswerGenerator(Protocol):
-    def generate(self, system_prompt: str, context_chunks: list[dict], user_question: str) -> dict: ...
+    def generate(
+        self,
+        system_prompt: str,
+        context_chunks: list[dict],
+        user_question: str,
+        profile: dict | None = None,
+        history: list[str] | None = None,
+    ) -> dict: ...
 
 _DIRECT_INTENT_FILES: dict[str, list[str]] = {
     "hours": ["kb/nn/core/hours.md", "kb/nn/core/contacts.md"],
@@ -28,6 +36,15 @@ _DIRECT_INTENT_FILES: dict[str, list[str]] = {
     "vr": ["kb/nn/services/vr.md", "kb/nn/core/contacts.md"],
     "phygital": ["kb/nn/services/phygital.md", "kb/nn/core/contacts.md"],
     "own_food_rules": ["kb/nn/food/own_food_rules.md", "kb/nn/parties/birthday.md", "kb/nn/core/contacts.md"],
+    "tickets_online": ["kb/nn/tickets/buy_online.md", "kb/nn/tickets/prices.md", "kb/nn/core/contacts.md"],
+    "socks": ["kb/nn/rules/socks.md", "kb/nn/core/contacts.md"],
+    "attractions": ["kb/nn/park/attractions_overview.md", "kb/nn/core/contacts.md"],
+    "contacts": ["kb/nn/core/contacts.md"],
+    "location": ["kb/nn/core/location.md", "kb/nn/core/contacts.md"],
+    "rules": ["kb/nn/rules/visit_rules.md", "kb/nn/rules/socks.md", "kb/nn/core/contacts.md"],
+    "birthday": ["kb/nn/parties/birthday.md", "kb/nn/core/contacts.md"],
+    "graduation": ["kb/nn/parties/graduation.md", "kb/nn/core/contacts.md"],
+    "park_facts": ["kb/nn/core/park_facts.md", "kb/nn/core/contacts.md"],
 }
 
 
@@ -65,13 +82,21 @@ class OpenAIAnswerer:
         self._temperature = 0.4
         self._max_tokens = 500
 
-    def generate(self, system_prompt: str, context_chunks: list[dict], user_question: str) -> dict:
+    def generate(
+        self,
+        system_prompt: str,
+        context_chunks: list[dict],
+        user_question: str,
+        profile: dict | None = None,
+        history: list[str] | None = None,
+    ) -> dict:
         from openai import OpenAI  # type: ignore
 
         client = OpenAI(api_key=self._api_key)
 
         sources: list[str] = []
         facts_lines: list[str] = []
+        profile_json = json.dumps(profile or {}, ensure_ascii=False)
         for idx, ch in enumerate(context_chunks, start=1):
             meta = ch.get("metadata") or {}
             file_path = str(meta.get("file_path") or "")
@@ -82,12 +107,14 @@ class OpenAIAnswerer:
 
         user_content = (
             f"Вопрос гостя: {user_question}\n\n"
+            f"ПАМЯТЬ О ГОСТЕ (если есть): {profile_json}\n\n"
             "ФАКТЫ ИЗ БАЗЫ (используй ТОЛЬКО их, не выдумывай):\n"
             + "\n".join(facts_lines)
             + "\n\n"
             "ПРАВИЛА ОТВЕТА:\n"
             "- Если в фактах нет ответа: скажи, что лучше уточнить у администратора/отдела праздников и дай контакт из базы.\n"
             "- Не упоминай “ИИ/бот/LLM/модель/контекст/чанки/TODO”.\n"
+            "- Используй память о госте только для персонализации (имя/возраст), а факты парка — только из KB.\n"
             "- Пиши как Джуси: дружелюбно, живо, без канцелярита, но чётко.\n"
         )
 
@@ -106,11 +133,32 @@ class OpenAIAnswerer:
         if answer.startswith("nЕсли"):
             answer = "Если" + answer[len("nЕсли") :]
 
-        def _format_phone(m: re.Match[str]) -> str:
-            digits = m.group(1)
-            return f"+7 {digits[0:3]} {digits[3:6]}-{digits[6:8]}-{digits[8:10]}"
+        def _normalize_phone(m: re.Match[str]) -> str:
+            digits = re.sub(r"\D", "", m.group(0))
+            if len(digits) == 11 and digits.startswith("7"):
+                return "+7" + digits[1:]
+            if len(digits) == 10:
+                return "+7" + digits
+            return m.group(0)
 
-        answer = re.sub(r"\+7(\d{10})\b", _format_phone, answer)
+        answer = re.sub(
+            r"\+7[\s()\-]*\d{3}[\s()\-]*\d{3}[\s()\-]*\d{2}[\s()\-]*\d{2}",
+            _normalize_phone,
+            answer,
+        )
+
+        def _strip_greeting_line(text: str) -> str:
+            lines = text.splitlines()
+            if not lines:
+                return text
+            first = lines[0].strip()
+            if re.match(r"^(привет|здравствуйте)\b", first, flags=re.IGNORECASE):
+                rest = "\n".join(lines[1:]).lstrip()
+                return rest or text
+            return text
+
+        if history:
+            answer = _strip_greeting_line(answer)
 
         # If context contains a directly relevant link (e.g. VR prices), include it (max 1 link).
         # This helps enforce the product rule even if the model answers "могу прислать".
@@ -148,7 +196,14 @@ class OpenAIAnswerer:
 
 
 class StubAnswerer:
-    def generate(self, system_prompt: str, context_chunks: list[dict], user_question: str) -> dict:
+    def generate(
+        self,
+        system_prompt: str,
+        context_chunks: list[dict],
+        user_question: str,
+        profile: dict | None = None,
+        history: list[str] | None = None,
+    ) -> dict:
         sources: list[str] = []
         seen: set[str] = set()
         for ch in context_chunks:

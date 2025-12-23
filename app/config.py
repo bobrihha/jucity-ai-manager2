@@ -4,6 +4,9 @@ from dataclasses import dataclass
 import os
 
 
+BUILD_ID = os.getenv("BUILD_ID", "dev")
+
+
 @dataclass(frozen=True)
 class Settings:
     qdrant_url: str
