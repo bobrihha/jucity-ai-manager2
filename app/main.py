@@ -16,6 +16,7 @@ from app.rag.answerer import OpenAIAnswerer, build_direct_context
 from app.rag.embedder import OpenAIEmbedder
 from app.rag.store_factory import get_store
 from app.rag.prompts import SYSTEM_PROMPT_JUICY_V1
+from shared.intents import detect_intent
 
 
 app = FastAPI(title="JuCity AI Manager", version="0.1.0")
@@ -82,98 +83,7 @@ def _tokenize_for_overlap(text: str) -> set[str]:
     return out
 
 
-def _detect_intent(question: str) -> str:
-    q = question.lower()
-
-    if (
-        "размер" in q
-        or "площад" in q
-        or "кв" in q
-        or "м²" in q
-        or "метр" in q
-        or "сколько аттракцион" in q
-        or "40" in q
-        or "большой парк" in q
-        or "маленький парк" in q
-    ):
-        return "park_facts"
-    if (
-        "носки" in q
-        or "носок" in q
-        or "в носках" in q
-        or "купить носки" in q
-        or "без носков" in q
-        or "сменка" in q
-        or "сменная обувь" in q
-    ):
-        return "socks"
-    if (
-        "аттракционы" in q
-        or "что есть" in q
-        or "какие есть" in q
-        or "батут" in q
-        or "горки" in q
-        or "карусели" in q
-        or "лабиринт" in q
-        or "развлечения" in q
-    ):
-        return "attractions"
-    if (
-        "контакт" in q
-        or "телефон" in q
-        or "позвон" in q
-        or "звон" in q
-        or "email" in q
-        or "почт" in q
-    ):
-        return "contacts"
-    if (
-        "адрес" in q
-        or "как добраться" in q
-        or "где находится" in q
-        or "локаци" in q
-    ):
-        return "location"
-    if "правил" in q or "запрещен" in q:
-        return "rules"
-    if "выпускн" in q:
-        return "graduation"
-    if (
-        "день рождения" in q
-        or re.search(r"\bдр\b", q)
-        or "праздник" in q
-        or "банкет" in q
-        or "комната" in q
-        or "анимация" in q
-    ):
-        return "birthday"
-
-    if "1 января" in q or "31 декабря" in q or "до скольки" in q or "режим" in q or "работаете" in q:
-        return "hours"
-    if "скидк" in q or "льгот" in q or "овз" in q or "многодет" in q:
-        return "discounts"
-    if "vr" in q:
-        return "vr"
-    if "фиджитал" in q:
-        return "phygital"
-    if "торт" in q or "сладкий" in q:
-        return "own_food_rules"
-    if (
-        "купить билет онлайн" in q
-        or "на сайте купить билет" in q
-        or "оплатить на сайте" in q
-        or "онлайн билет" in q
-        or "прям на сайте" in q
-    ):
-        return "tickets_online"
-    if (
-        "сколько стоит" in q
-        or "цена" in q
-        or "билет" in q
-        or any(day in q for day in ["понедельник", "вторник", "сред", "четверг", "пятниц", "суббот", "воскрес"])
-    ):
-        return "prices"
-    return "general"
+# Intent detection moved to shared.intents.detect_intent
 
 
 def _allowed_files_for_intent(intent: str) -> set[str] | None:
@@ -242,7 +152,7 @@ def ask(payload: AskRequest) -> dict:
     if not _settings.openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is required for /ask")
 
-    intent = _detect_intent(payload.question)
+    intent = detect_intent(payload.question)
     if intent != "general":
         context_chunks = build_direct_context(intent)
         if not context_chunks:

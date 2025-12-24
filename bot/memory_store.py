@@ -52,10 +52,21 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS user_profile (
                     user_id INTEGER PRIMARY KEY,
                     data_json TEXT NOT NULL,
+                    last_topic TEXT,
+                    history_json TEXT,
                     updated_ts INTEGER NOT NULL
                 )
                 """
             )
+            # Add columns if they don't exist (migration for existing DBs)
+            try:
+                await db.execute("ALTER TABLE user_profile ADD COLUMN last_topic TEXT")
+            except Exception:
+                pass  # Column already exists
+            try:
+                await db.execute("ALTER TABLE user_profile ADD COLUMN history_json TEXT")
+            except Exception:
+                pass  # Column already exists
             await db.commit()
         self._initialized = True
 
@@ -110,6 +121,84 @@ class MemoryStore:
 
         return updated
 
+    async def get_context(self, user_id: int) -> dict[str, Any]:
+        """Get session context (last_topic and history) for a user."""
+        await self.init()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT last_topic, history_json, updated_ts FROM user_profile WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+        if not row:
+            return {"last_topic": None, "history": []}
+
+        last_topic, history_json, updated_ts = row
+        
+        # Check expiration
+        if _is_expired(int(updated_ts)):
+            return {"last_topic": None, "history": []}
+
+        history = []
+        if history_json:
+            try:
+                history = json.loads(history_json)
+            except json.JSONDecodeError:
+                history = []
+
+        return {"last_topic": last_topic, "history": history if isinstance(history, list) else []}
+
+    async def update_context(
+        self,
+        user_id: int,
+        *,
+        last_topic: str | None = None,
+        history: list[str] | None = None,
+    ) -> None:
+        """Update session context (last_topic and/or history) for a user."""
+        await self.init()
+
+        now_ts = int(time.time())
+        history_json = json.dumps(history, ensure_ascii=False) if history is not None else None
+
+        async with aiosqlite.connect(self.db_path) as db:
+            # Check if user exists
+            async with db.execute(
+                "SELECT user_id FROM user_profile WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                exists = await cursor.fetchone()
+
+            if exists:
+                # Build dynamic update
+                updates = ["updated_ts = ?"]
+                params: list[Any] = [now_ts]
+                
+                if last_topic is not None:
+                    updates.append("last_topic = ?")
+                    params.append(last_topic)
+                if history_json is not None:
+                    updates.append("history_json = ?")
+                    params.append(history_json)
+                
+                params.append(user_id)
+                await db.execute(
+                    f"UPDATE user_profile SET {', '.join(updates)} WHERE user_id = ?",
+                    params,
+                )
+            else:
+                # Insert new row
+                await db.execute(
+                    """
+                    INSERT INTO user_profile (user_id, data_json, last_topic, history_json, updated_ts)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user_id, json.dumps(_empty_profile(), ensure_ascii=False), last_topic, history_json, now_ts),
+                )
+            await db.commit()
+
     async def touch(self, user_id: int) -> None:
         await self.init()
         now_ts = int(time.time())
@@ -138,3 +227,4 @@ class MemoryStore:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
             await db.commit()
+

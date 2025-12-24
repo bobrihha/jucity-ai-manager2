@@ -11,11 +11,22 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot.config import get_settings
 from bot.keyboards import menu_button_kb, menu_inline_kb
+from bot.quick_replies import TOPIC_TEMPLATES
 from bot.memory_store import MemoryStore
 from bot.profile_extractor import extract_profile_patch
-from bot.state import append_history, get_user_ctx
+from bot.state import append_history, get_user_ctx, set_user_ctx
 from bot.stickers import should_send_sticker, sticker_id_map
 from bot.utils_render import render_telegram_html
+from shared.intents import (
+    BOOKING_TRIGGERS,
+    LAST_TOPIC_CONTEXT,
+    PARTY_KEYWORDS,
+    get_context_hint,
+    has_booking_triggers,
+    has_intent_hints,
+    has_party_keywords,
+    should_contextualize_cake_fee,
+)
 
 
 router = Router()
@@ -54,253 +65,75 @@ TOPIC_QUESTIONS = {
     "socks": "Можно ли у вас купить носки? И можно ли заходить в игровых зонах в обуви?",
 }
 
-TOPIC_TEMPLATES = {
-    "prices": """Билет в наш парк стоит:
 
-- Понедельник: 990 ₽
-- Вторник–пятница: 1190 ₽
-- Суббота–воскресенье: 1590 ₽
+# _LAST_TOPIC_CONTEXT moved to shared.intents.LAST_TOPIC_CONTEXT
 
-Важно, что у нас нет ограничений по времени — дети могут играть весь день без перерыва! А взрослые 18+ проходят бесплатно. 😊
-
-Если нужно — подскажу маршрут или контакты.""",
-    "discounts": """Есть скидки: именинник 50% (день рождения +5 дней), многодетные 30% (кроме пн), 1–4 года 20% (вт–пт), после 20:00 50% (кроме пн), ОВЗ бесплатно (пн–пт), СВО 30% (пн–пт), 14–18 лет 50%, пенсионерам 20% (15.07–15.08).
-Скажите, кто идёт и на какой день — подберу подходящую.""",
-    "birthday": """День рождения у нас проходит очень весело! Есть два формата:
-
-1. Зона ресторана — здесь вы можете отмечать без лимита по времени, выбирая удобное время.
-2. Волшебная комната — даётся на 3 часа, с возможными слотами в 10:30, 14:30 и 18:30. Для этого нужно купить от 6 детских билетов, а именинник идёт бесплатно.
-
-Что касается торта, вы можете принести свой, но нужно будет оплатить "сладкий сбор" в 1000 ₽. Это означает, что вы берёте на себя ответственность за качество торта. Свою еду и напитки приносить нельзя, но в нашем ресторане есть много вкусного!
-
-Если хотите узнать больше о дате и количестве детей, я с удовольствием помогу подобрать лучший вариант! 😊""",
-    "graduation": """Выпускные у нас проходят очень весело! Мы подбираем программу в зависимости от возраста и количества детей. Обычно это 60 минут шоу или анимации на выбор, плюс игры и активности. У нас есть разные программы, такие как “Мультяшкино”, “Туса-Джуса” и “Город профессий”. 🎉
-
-Чтобы забронировать, лучше всего связаться с нашим отделом праздников по телефону +7 962 509 74 93. Условия и цены могут зависеть от сезона, так что лучше уточнить заранее.
-
-Какую дату вы планируете для выпускного и сколько детей будет? Я помогу с вариантами! Просто напишите сообщение в чат 😊""",
-    "hours": """Режим: пн 12:00–22:00, вт–вс 10:00–22:00. 31.12 до 18:00, 01.01 не работаем.
-Если нужно — подскажу маршрут/контакты.""",
-    "location": """Адрес: Нижний Новгород, ул. Коминтерна, 11, ТЦ «Лента», 1 этаж.
-Парк внутри ТЦ, есть парковка. Если нужно — подскажу маршрут.""",
-    "rules": """В нашем парке есть несколько важных правил для посещения:
-
-1. В игровые зоны можно заходить только в носках. Уличная обувь оставляем за дверью. Если носков нет, их можно купить на месте.
-2. В зоне ресторана можно быть в чистой сменной обуви, например, в тапочках.
-3. Возрастных ограничений нет, но обязательно нужно сопровождение взрослых для детей.
-
-Если есть еще вопросы или нужна помощь, просто напишите сообщение  в чат! 😊""",
-    "vr": """VR — отдельная услуга, не входит в безлимит. Цены: https://nn.jucity.ru/tickets-vr/.
-Можно купить на ресепшн во время визита.""",
-    "phygital": """Фиджитал — это зона с интерактивными играми, где можно поиграть в сюжетные и спортивные игры, например, с динозаврами или в баскетбол. Билет на фиджитал приобретается отдельно и его можно купить на ресепшн, как сразу при покупке безлимита, так и в течение визита.
-
-Стоимость и форматы зависят от актуального прайса, поэтому лучше уточнить это у администратора на месте. Если у вас есть еще вопросы, я с радостью помогу! 😊""",
-    "contacts": """Вот контакты нашего парка и отдела праздников:
-
-- Отдел праздников: +7 96250974 93
-- Горячая линия: +7 (831) 213-50-50
-- Доп. номер: +7 (963) 230-50-50
-- Email праздников: prazdnik52@jucity.ru
-
-Если у вас вопросы по бронированию или программам, лучше сразу обратиться в отдел праздников — они помогут быстрее! 😊 Чем могу помочь ещё? Просто напишите сообщение прямо здесь и я отвечу""",
-}
-
-_LAST_TOPIC_CONTEXT = {
-    "prices": "Контекст: обсуждаем цену билета.",
-    "discounts": "Контекст: обсуждаем скидки и льготы.",
-    "hours": "Контекст: обсуждаем режим работы парка.",
-    "location": "Контекст: обсуждаем адрес и как добраться.",
-    "rules": "Контекст: обсуждаем правила посещения.",
-    "birthday": "Контекст: обсуждаем день рождения в парке.",
-    "graduation": "Контекст: обсуждаем выпускные в парке.",
-    "vr": "Контекст: обсуждаем VR в парке.",
-    "phygital": "Контекст: обсуждаем фиджитал в парке.",
-    "contacts": "Контекст: обсуждаем контакты парка.",
-    "tickets_online": "Контекст: обсуждаем покупку билета онлайн.",
-    "park_facts": "Контекст: обсуждаем размер парка.",
-    "attractions": "Контекст: обсуждаем аттракционы и развлечения.",
-    "socks": "Контекст: обсуждаем правила про носки.",
-}
-
-_INTENT_HINTS = (
-    "1 января",
-    "31 декабря",
-    "до скольки",
-    "режим",
-    "работаете",
-    "скидк",
-    "льгот",
-    "овз",
-    "многодет",
-    "vr",
-    "фиджитал",
-    "торт",
-    "сладкий",
-    "купить билет онлайн",
-    "на сайте купить билет",
-    "оплатить на сайте",
-    "онлайн билет",
-    "прям на сайте",
-    "сколько стоит",
-    "цена",
-    "билет",
-    "понедельник",
-    "вторник",
-    "сред",
-    "четверг",
-    "пятниц",
-    "суббот",
-    "воскрес",
-    "носки",
-    "носок",
-    "сменка",
-    "сменная обувь",
-    "размер",
-    "площад",
-    "кв",
-    "м²",
-    "метр",
-    "аттракционы",
-    "что есть",
-    "какие есть",
-    "батут",
-    "горки",
-    "карусели",
-    "лабиринт",
-    "развлечения",
-    "адрес",
-    "как добраться",
-    "контакт",
-    "телефон",
-    "правил",
-    "выпускн",
-    "день рождения",
-    "праздник",
-    "банкет",
-    "комната",
-    "анимация",
-)
-
-BOOKING_TRIGGERS = (
-    "забронировать",
-    "бронь",
-    "заказать",
-    "хочу праздник",
-    "день рождения",
-    "выпускной",
-    "анимация",
-)
+# _INTENT_HINTS, BOOKING_TRIGGERS, _PARTY_KEYWORDS, _OTHER_TOPIC_TRIGGERS
+# moved to shared.intents
 
 _booking_hint_last: dict[int, float] = {}
 
 _CAKE_FEE_SOURCES = {"kb/nn/food/own_food_rules.md"}
-_PARTY_KEYWORDS = (
-    "день рождения",
-    "праздник",
-    "выпускной",
-    "анимация",
-    "бронь",
-    "комната",
-    "банкет",
-    "торт",
-)
 
-_OTHER_TOPIC_TRIGGERS = (
-    "сколько стоит",
-    "цена",
-    "билет",
-    "скидк",
-    "льгот",
-    "овз",
-    "многодет",
-    "режим",
-    "до скольки",
-    "работаете",
-    "адрес",
-    "как добраться",
-    "контакт",
-    "vr",
-    "фиджитал",
-)
+# Track which users have loaded context from DB
+_loaded_from_db: set[int] = set()
 
-def _update_last_topic(user_id: int, sources: list[str]) -> None:
+
+async def _ensure_context_loaded(user_id: int) -> None:
+    """Load user context from DB into memory cache if not already loaded."""
+    if user_id in _loaded_from_db:
+        return
+    
+    db_ctx = await memory_store.get_context(user_id)
+    set_user_ctx(user_id, db_ctx)
+    _loaded_from_db.add(user_id)
+
+async def _update_last_topic(user_id: int, sources: list[str]) -> None:
+    """Update last_topic based on response sources. Also saves to DB."""
     if not sources:
         return
 
     ctx = get_user_ctx(user_id)
+    new_topic: str | None = None
 
     if "kb/nn/food/own_food_rules.md" in sources:
-        ctx["last_topic"] = "cake_fee"
-        return
-    if "kb/nn/tickets/prices.md" in sources:
-        ctx["last_topic"] = "prices"
-        return
-    if "kb/nn/tickets/discounts.md" in sources:
-        ctx["last_topic"] = "discounts"
-        return
-    if "kb/nn/core/hours.md" in sources:
-        ctx["last_topic"] = "hours"
-        return
-    if "kb/nn/core/location.md" in sources:
-        ctx["last_topic"] = "location"
-        return
-    if "kb/nn/core/contacts.md" in sources:
-        ctx["last_topic"] = "contacts"
-        return
-    if "kb/nn/rules/visit_rules.md" in sources:
-        ctx["last_topic"] = "rules"
-        return
-    if "kb/nn/parties/birthday.md" in sources:
-        ctx["last_topic"] = "birthday"
-        return
-    if "kb/nn/parties/graduation.md" in sources:
-        ctx["last_topic"] = "graduation"
-        return
-    if "kb/nn/services/vr.md" in sources:
-        ctx["last_topic"] = "vr"
-        return
-    if "kb/nn/services/phygital.md" in sources:
-        ctx["last_topic"] = "phygital"
-        return
-    if "kb/nn/tickets/buy_online.md" in sources:
-        ctx["last_topic"] = "tickets_online"
-        return
-    if "kb/nn/rules/socks.md" in sources:
-        ctx["last_topic"] = "socks"
-        return
-    if "kb/nn/core/park_facts.md" in sources:
-        ctx["last_topic"] = "park_facts"
-        return
-    if "kb/nn/park/attractions_overview.md" in sources:
-        ctx["last_topic"] = "attractions"
-        return
+        new_topic = "cake_fee"
+    elif "kb/nn/tickets/prices.md" in sources:
+        new_topic = "prices"
+    elif "kb/nn/tickets/discounts.md" in sources:
+        new_topic = "discounts"
+    elif "kb/nn/core/hours.md" in sources:
+        new_topic = "hours"
+    elif "kb/nn/core/location.md" in sources:
+        new_topic = "location"
+    elif "kb/nn/core/contacts.md" in sources:
+        new_topic = "contacts"
+    elif "kb/nn/rules/visit_rules.md" in sources:
+        new_topic = "rules"
+    elif "kb/nn/parties/birthday.md" in sources:
+        new_topic = "birthday"
+    elif "kb/nn/parties/graduation.md" in sources:
+        new_topic = "graduation"
+    elif "kb/nn/services/vr.md" in sources:
+        new_topic = "vr"
+    elif "kb/nn/services/phygital.md" in sources:
+        new_topic = "phygital"
+    elif "kb/nn/tickets/buy_online.md" in sources:
+        new_topic = "tickets_online"
+    elif "kb/nn/rules/socks.md" in sources:
+        new_topic = "socks"
+    elif "kb/nn/core/park_facts.md" in sources:
+        new_topic = "park_facts"
+    elif "kb/nn/park/attractions_overview.md" in sources:
+        new_topic = "attractions"
 
-def _should_contextualize_cake_fee(text: str, last_topic: str | None) -> bool:
-    if last_topic not in ("cake_fee", "birthday"):
-        return False
-    t = (text or "").lower()
-    if not any(trigger in t for trigger in ("1000", "за что", "почему")):
-        return False
-    if any(trigger in t for trigger in _OTHER_TOPIC_TRIGGERS):
-        return False
-    return True
+    if new_topic:
+        ctx["last_topic"] = new_topic
+        # Persist to DB
+        await memory_store.update_context(user_id, last_topic=new_topic)
 
-
-def _has_intent_hints(text: str) -> bool:
-    t = (text or "").lower()
-    if re.search(r"\bдр\b", t):
-        return True
-    return any(hint in t for hint in _INTENT_HINTS)
-
-
-def _has_party_keywords(texts: list[str]) -> bool:
-    for t in texts:
-        low = (t or "").lower()
-        if any(key in low for key in _PARTY_KEYWORDS):
-            return True
-        if re.search(r"\bдр\b", low):
-            return True
-    return False
+# _should_contextualize_cake_fee, _has_intent_hints, _has_party_keywords
+# moved to shared.intents
 
 
 def _maybe_strip_party_contact(answer: str, user_text: str, history: list[str] | None) -> str:
@@ -319,7 +152,7 @@ def _maybe_strip_party_contact(answer: str, user_text: str, history: list[str] |
         recent = history[-2:]
     if user_text:
         recent.append(user_text)
-    if _has_party_keywords(recent):
+    if has_party_keywords(recent):
         return answer
 
     triggers = ("если ты планируешь праздник", "лучше всего связаться")
@@ -485,6 +318,9 @@ async def _send_long_message(message: Message, text: str, *, keyboard=None) -> N
 
 async def _build_request_payload(user_id: int, user_text: str) -> tuple[list[str], dict]:
     history_short = append_history(user_id, user_text)
+    # Persist history to DB
+    await memory_store.update_context(user_id, history=history_short)
+    
     patch = extract_profile_patch(user_text)
     if patch:
         await memory_store.upsert_profile(user_id, patch)
@@ -524,7 +360,7 @@ async def _reply_with_answer(
         effective_user_id = message.from_user.id
 
     if effective_user_id is not None:
-        _update_last_topic(effective_user_id, sources)
+        await _update_last_topic(effective_user_id, sources)
         logger.info("user_id=%s question=%r sources=%s", effective_user_id, question, sources)
     else:
         logger.info("user_id=unknown question=%r sources=%s", question, sources)
@@ -548,9 +384,12 @@ async def _handle_topic(message: Message, topic: str, *, user_id: int | None = N
     template = TOPIC_TEMPLATES.get(topic)
     if template:
         if user_id is not None:
-            append_history(user_id, question)
+            await _ensure_context_loaded(user_id)
+            history_short = append_history(user_id, question)
             ctx = get_user_ctx(user_id)
             ctx["last_topic"] = topic
+            # Also save to DB (last_topic + history)
+            await memory_store.update_context(user_id, last_topic=topic, history=history_short)
         await _send_long_message(message, template, keyboard=menu_button_kb())
         await _maybe_send_sticker(message, question)
         return
@@ -670,16 +509,17 @@ async def any_text(message: Message) -> None:
     user_id = None
     if message.from_user:
         user_id = message.from_user.id
+        await _ensure_context_loaded(user_id)
         history, profile = await _build_request_payload(user_id, question)
         ctx = get_user_ctx(user_id)
         last_topic = ctx.get("last_topic")
-        if _should_contextualize_cake_fee(question, last_topic):
+        if should_contextualize_cake_fee(question, last_topic):
             context_question = (
                 "Контекст: обсуждаем сладкий сбор за торт на празднике. "
                 f"Вопрос: {question}"
             )
-        elif last_topic and not _has_intent_hints(question):
-            hint = _LAST_TOPIC_CONTEXT.get(last_topic)
+        elif last_topic and not has_intent_hints(question):
+            hint = get_context_hint(last_topic)
             if hint:
                 context_question = f"{hint} Вопрос: {question}"
 
